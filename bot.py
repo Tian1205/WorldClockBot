@@ -1,5 +1,6 @@
 import os
 import threading
+import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import discord
 from discord.ext import commands, tasks
@@ -9,6 +10,8 @@ from zoneinfo import ZoneInfo
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = 1510167619431563355
 PORT = int(os.getenv("PORT", 10000))
+
+RENDER_URL = "https://worldclockbot.onrender.com"
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -26,6 +29,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 clock_message = None
+last_minute = None
 
 weekdays = {
     0: "星期一",
@@ -70,9 +74,19 @@ async def on_ready():
     if not update_clock.is_running():
         update_clock.start()
 
-@tasks.loop(minutes=1)
+    if not keep_alive.is_running():
+        keep_alive.start()
+
+@tasks.loop(seconds=30)
 async def update_clock():
-    global clock_message
+    global clock_message, last_minute
+
+    current_minute = datetime.now(ZoneInfo("Asia/Taipei")).strftime("%Y/%m/%d %H:%M")
+
+    if current_minute == last_minute:
+        return
+
+    last_minute = current_minute
 
     channel = bot.get_channel(CHANNEL_ID)
 
@@ -90,6 +104,14 @@ async def update_clock():
 
     except Exception as e:
         print(f"錯誤：{e}")
+
+@tasks.loop(minutes=5)
+async def keep_alive():
+    try:
+        urllib.request.urlopen(RENDER_URL, timeout=10)
+        print("Keep alive ping 成功")
+    except Exception as e:
+        print(f"Keep alive ping 失敗：{e}")
 
 if TOKEN is None:
     raise ValueError("找不到 DISCORD_TOKEN，請確認 Render Environment Variable 是否有設定。")
