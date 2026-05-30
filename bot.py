@@ -1,26 +1,29 @@
 import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-# =========================
-# Discord Token (Render環境變數)
-# =========================
 TOKEN = os.getenv("DISCORD_TOKEN")
-
-# =========================
-# Discord 頻道 ID
-# =========================
 CHANNEL_ID = 1510167619431563355
+PORT = int(os.getenv("PORT", 10000))
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"WorldClockBot is running")
+
+def run_web_server():
+    server = HTTPServer(("0.0.0.0", PORT), HealthCheckHandler)
+    server.serve_forever()
 
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = commands.Bot(
-    command_prefix="!",
-    intents=intents
-)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 clock_message = None
 
@@ -35,37 +38,24 @@ timezones = {
 }
 
 def make_clock_text():
-
     text = "🌍 **世界時鐘**\n\n"
 
     for city, zone in timezones.items():
-
-        now = datetime.now(
-            ZoneInfo(zone)
-        )
-
-        text += (
-            f"{city}："
-            f"`{now.strftime('%Y/%m/%d %H:%M:%S')}`\n"
-        )
+        now = datetime.now(ZoneInfo(zone))
+        text += f"{city}：`{now.strftime('%Y/%m/%d %H:%M:%S')}`\n"
 
     text += "\n⏰ 每分鐘自動更新"
-
     return text
-
 
 @bot.event
 async def on_ready():
-
     print(f"已登入：{bot.user}")
 
     if not update_clock.is_running():
         update_clock.start()
 
-
 @tasks.loop(minutes=1)
 async def update_clock():
-
     global clock_message
 
     channel = bot.get_channel(CHANNEL_ID)
@@ -75,24 +65,18 @@ async def update_clock():
         return
 
     try:
-
         if clock_message is None:
-
-            clock_message = await channel.send(
-                make_clock_text()
-            )
-
+            clock_message = await channel.send(make_clock_text())
             print("世界時鐘訊息已建立")
-
         else:
-
-            await clock_message.edit(
-                content=make_clock_text()
-            )
+            await clock_message.edit(content=make_clock_text())
+            print("世界時鐘已更新")
 
     except Exception as e:
-
         print(f"錯誤：{e}")
 
+if TOKEN is None:
+    raise ValueError("找不到 DISCORD_TOKEN，請確認 Render Environment Variable 是否有設定。")
 
+threading.Thread(target=run_web_server, daemon=True).start()
 bot.run(TOKEN)
